@@ -146,6 +146,7 @@ export default function Home() {
         <h1>AI Legal Document Assistant</h1>
         <button onClick={handleLogout}>Log Out</button>
       </div>
+      <p><a href="/compare">Compare two contract versions →</a></p>
       <p>Logged in as: {user?.email}</p>
 
       <input
