@@ -14,6 +14,11 @@ export default function Compare() {
   const [comparing, setComparing] = useState(false)
   const [comparison, setComparison] = useState(null)
 
+  const [combinedText, setCombinedText] = useState(null)
+  const [chatMessages, setChatMessages] = useState([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+
   const router = useRouter()
 
   useEffect(() => {
@@ -61,6 +66,7 @@ export default function Compare() {
 
     setStatus('Extracting text from both documents...')
     setComparison(null)
+    setChatMessages([])
     setComparing(true)
 
     try {
@@ -95,12 +101,52 @@ export default function Compare() {
 
       setStatus('✅ Comparison complete!')
       setComparison(data.comparison)
+
+      // Build one combined text block so chat can reference both documents + the comparison itself
+      const combined = `VERSION A (${fileA.name}):\n${textA}\n\nVERSION B (${fileB.name}):\n${textB}\n\nAI-GENERATED COMPARISON OF THESE TWO VERSIONS:\n${data.comparison}`
+      setCombinedText(combined)
     } catch (err) {
       setStatus('❌ Something went wrong comparing these documents. Please try again.')
       console.error('Compare error:', err.message)
     } finally {
       setComparing(false)
     }
+  }
+
+  async function handleSendChat() {
+    if (!chatInput.trim() || !combinedText) return
+
+    const question = chatInput.trim()
+    const newMessages = [...chatMessages, { role: 'user', content: question }]
+    setChatMessages(newMessages)
+    setChatInput('')
+    setChatLoading(true)
+
+    const { data: { session } } = await supabase.auth.getSession()
+
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        extractedText: combinedText,
+        question,
+        history: newMessages,
+      }),
+    })
+
+    const data = await res.json()
+    setChatLoading(false)
+
+    if (!res.ok) {
+      setChatMessages([...newMessages, { role: 'assistant', content: '❌ Something went wrong. Please try asking again.' }])
+      console.error('Chat error:', data.error)
+      return
+    }
+
+    setChatMessages([...newMessages, { role: 'assistant', content: data.answer }])
   }
 
   if (checkingAuth) {
@@ -143,6 +189,41 @@ export default function Compare() {
       {comparison && (
         <div style={{ marginTop: '1.5rem', border: '1px solid #ccc', padding: '1rem', whiteSpace: 'pre-wrap' }}>
           {comparison}
+        </div>
+      )}
+
+      {combinedText && (
+        <div style={{ marginTop: '2rem' }}>
+          <h2>Ask a question about these two versions</h2>
+
+          <div style={{ border: '1px solid #ccc', padding: '1rem', minHeight: '100px', marginBottom: '1rem' }}>
+            {chatMessages.length === 0 && (
+              <p style={{ color: '#888' }}>
+                No questions yet. Try asking something like "Which version is better for the contractor?"
+              </p>
+            )}
+
+            {chatMessages.map((msg, i) => (
+              <div key={i} style={{ marginBottom: '0.75rem' }}>
+                <strong>{msg.role === 'user' ? 'You' : 'Assistant'}:</strong>
+                <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
+              </div>
+            ))}
+
+            {chatLoading && <p>🤖 Thinking...</p>}
+          </div>
+
+          <input
+            type="text"
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSendChat()}
+            placeholder="Ask a question about these versions..."
+            style={{ width: '75%', padding: '0.5rem' }}
+          />
+          <button onClick={handleSendChat} style={{ marginLeft: '1rem' }} disabled={chatLoading}>
+            Send
+          </button>
         </div>
       )}
     </main>
