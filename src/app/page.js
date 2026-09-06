@@ -9,8 +9,14 @@ export default function Home() {
   const [checkingAuth, setCheckingAuth] = useState(true)
   const [file, setFile] = useState(null)
   const [status, setStatus] = useState('')
+  const [document, setDocument] = useState(null)
   const [analysis, setAnalysis] = useState(null)
   const [analyzing, setAnalyzing] = useState(false)
+
+  const [chatMessages, setChatMessages] = useState([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+
   const router = useRouter()
 
   useEffect(() => {
@@ -39,6 +45,8 @@ export default function Home() {
 
     setStatus('Uploading and extracting text...')
     setAnalysis(null)
+    setDocument(null)
+    setChatMessages([])
 
     const { data: { session } } = await supabase.auth.getSession()
 
@@ -57,12 +65,13 @@ export default function Home() {
     const data = await res.json()
 
     if (!res.ok) {
-      setStatus('❌ Something went wrong uploading your file. Please try again, or use a different file.')
-      console.error('Upload error:', data.error) // full detail stays in browser console for you to debug
+      setStatus('❌ Something went wrong uploading your file. Please try again.')
+      console.error('Upload error:', data.error)
       return
     }
 
     setStatus('✅ Upload successful! Analyzing document...')
+    setDocument(data.document)
     handleAnalyze(data.document)
   }
 
@@ -82,13 +91,49 @@ export default function Home() {
     setAnalyzing(false)
 
     if (!res.ok) {
-      setStatus('❌ Something went wrong analyzing your document. Please try again in a moment.')
+      setStatus('❌ Something went wrong analyzing your document. Please try again.')
       console.error('Analyze error:', data.error)
       return
     }
 
     setStatus('✅ Analysis complete!')
     setAnalysis(data.analysis)
+  }
+
+  async function handleSendChat() {
+    if (!chatInput.trim() || !document) return
+
+    const question = chatInput.trim()
+    const newMessages = [...chatMessages, { role: 'user', content: question }]
+    setChatMessages(newMessages)
+    setChatInput('')
+    setChatLoading(true)
+
+    const { data: { session } } = await supabase.auth.getSession()
+
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        extractedText: document.extracted_text,
+        question,
+        history: newMessages,
+      }),
+    })
+
+    const data = await res.json()
+    setChatLoading(false)
+
+    if (!res.ok) {
+      setChatMessages([...newMessages, { role: 'assistant', content: '❌ Something went wrong. Please try asking again.' }])
+      console.error('Chat error:', data.error)
+      return
+    }
+
+    setChatMessages([...newMessages, { role: 'assistant', content: data.answer }])
   }
 
   if (checkingAuth) {
@@ -119,6 +164,37 @@ export default function Home() {
       {analysis && (
         <div style={{ marginTop: '1rem', border: '1px solid #ccc', padding: '1rem', whiteSpace: 'pre-wrap' }}>
           {analysis}
+        </div>
+      )}
+
+      {document && (
+        <div style={{ marginTop: '2rem' }}>
+          <h2>Ask a question about this document</h2>
+
+          <div style={{ border: '1px solid #ccc', padding: '1rem', minHeight: '100px', marginBottom: '1rem' }}>
+            {chatMessages.length === 0 && <p style={{ color: '#888' }}>No questions yet. Try asking something like "What happens if I terminate early?"</p>}
+
+            {chatMessages.map((msg, i) => (
+              <div key={i} style={{ marginBottom: '0.75rem' }}>
+                <strong>{msg.role === 'user' ? 'You' : 'Assistant'}:</strong>
+                <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
+              </div>
+            ))}
+
+            {chatLoading && <p>🤖 Thinking...</p>}
+          </div>
+
+          <input
+            type="text"
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSendChat()}
+            placeholder="Ask a question about this document..."
+            style={{ width: '75%', padding: '0.5rem' }}
+          />
+          <button onClick={handleSendChat} style={{ marginLeft: '1rem' }} disabled={chatLoading}>
+            Send
+          </button>
         </div>
       )}
     </main>
