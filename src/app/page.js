@@ -1,5 +1,6 @@
 'use client'
 
+import jsPDF from 'jspdf'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -65,11 +66,11 @@ export default function Home() {
     const data = await res.json()
 
     if (!res.ok) {
-      setStatus('❌ Something went wrong uploading your file. Please try again.')
+      setStatus('❌ ' + (data.userFacing ? data.error : 'Something went wrong uploading your file. Please try again.'))
       console.error('Upload error:', data.error)
       return
     }
-
+    
     setStatus('✅ Upload successful! Analyzing document...')
     setDocument(data.document)
     handleAnalyze(data.document)
@@ -99,6 +100,125 @@ export default function Home() {
     setStatus('✅ Analysis complete!')
     setAnalysis(data.analysis)
   }
+
+  function handleDownloadPDF() {
+  const doc = new jsPDF()
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const pageHeight = doc.internal.pageSize.getHeight()
+  const margin = 15
+  const usableWidth = pageWidth - margin * 2
+  const bottomMargin = 20
+  let y = 20
+
+  // Clean characters jsPDF's default fonts can't render correctly
+  const safeAnalysis = analysis
+    .replace(/₹/g, 'Rs. ')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/\u2013|\u2014/g, '-')
+
+  function ensureSpace(neededHeight) {
+    if (y + neededHeight > pageHeight - bottomMargin) {
+      doc.addPage()
+      y = 20
+    }
+  }
+
+  function writeParagraph(text, fontSize = 11) {
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(fontSize)
+    const lines = doc.splitTextToSize(text, usableWidth)
+    lines.forEach((line) => {
+      ensureSpace(6)
+      doc.text(line, margin, y)
+      y += 6
+    })
+  }
+
+  function writeBullet(text) {
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(11)
+    const bulletIndent = 6
+    const lines = doc.splitTextToSize(text, usableWidth - bulletIndent)
+
+    // Keep the whole bullet together if it reasonably fits on one page
+    ensureSpace(lines.length * 6)
+
+    lines.forEach((line, i) => {
+      ensureSpace(6)
+      if (i === 0) {
+        doc.text('•', margin, y)
+      }
+      doc.text(line, margin + bulletIndent, y)
+      y += 6
+    })
+    y += 1 // small gap after each bullet
+  }
+
+  function writeHeading(text) {
+    ensureSpace(12)
+    y += 3
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(13)
+    doc.text(text, margin, y)
+    y += 7
+  }
+
+  // --- Title block ---
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(16)
+  doc.text('AI Legal Document Analysis', margin, y)
+  y += 8
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(10)
+  doc.setTextColor(100)
+  doc.text(`Document: ${document.file_name}`, margin, y)
+  y += 5
+  doc.text(`Generated: ${new Date().toLocaleString()}`, margin, y)
+  y += 4
+  doc.setTextColor(0)
+
+  // Divider line
+  ensureSpace(6)
+  y += 2
+  doc.setDrawColor(200)
+  doc.line(margin, y, pageWidth - margin, y)
+  y += 8
+
+  // --- Parse the analysis into sections ---
+  const knownHeadings = ['SUMMARY:', 'KEY CLAUSES:', 'RISK FLAGS:', 'DISCLAIMER:']
+  const rawLines = safeAnalysis.split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
+
+  let currentHeading = null
+  let currentBuffer = []
+
+  function flushBuffer() {
+    currentBuffer.forEach((line) => {
+      if (line.startsWith('*') || line.startsWith('-')) {
+        const cleaned = line.replace(/^[\*\-]\s*/, '').replace(/\*\*/g, '')
+        writeBullet(cleaned)
+      } else {
+        writeParagraph(line.replace(/\*\*/g, ''))
+      }
+    })
+    currentBuffer = []
+  }
+
+  rawLines.forEach((line) => {
+    const matchedHeading = knownHeadings.find((h) => line.toUpperCase().startsWith(h))
+    if (matchedHeading) {
+      flushBuffer()
+      currentHeading = matchedHeading.replace(':', '')
+      writeHeading(currentHeading)
+    } else {
+      currentBuffer.push(line)
+    }
+  })
+  flushBuffer()
+
+  doc.save(`${document.file_name.replace(/\.[^/.]+$/, '')}-analysis.pdf`)
+}
 
   async function handleSendChat() {
     if (!chatInput.trim() || !document) return
@@ -163,8 +283,13 @@ export default function Home() {
       {analyzing && <p>🤖 Gemini is analyzing your document...</p>}
 
       {analysis && (
-        <div style={{ marginTop: '1rem', border: '1px solid #ccc', padding: '1rem', whiteSpace: 'pre-wrap' }}>
-          {analysis}
+        <div style={{ marginTop: '1rem' }}>
+          <button onClick={handleDownloadPDF} style={{ marginBottom: '1rem' }}>
+            📄 Download as PDF
+          </button>
+          <div style={{ border: '1px solid #ccc', padding: '1rem', whiteSpace: 'pre-wrap' }}>
+            {analysis}
+          </div>
         </div>
       )}
 

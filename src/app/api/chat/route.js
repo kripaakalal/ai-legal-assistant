@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { GoogleGenerativeAI } from '@google/generative-ai'
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+import { generateText } from '@/lib/gemini'
 
 export async function POST(request) {
   try {
@@ -30,7 +28,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Missing document text or question' }, { status: 400 })
     }
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' })
+  
 
     const historyText = (history || [])
       .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
@@ -48,8 +46,8 @@ New question: ${question}
 
 Answer:`
 
-    const result = await model.generateContent(prompt)
-    const answer = result.response.text()
+    
+    const answer = await generateText(prompt)
 
     return NextResponse.json({ success: true, answer })
   } catch (err) {

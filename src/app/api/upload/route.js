@@ -32,8 +32,19 @@ export async function POST(request) {
     // Extract text based on file type
     let extractedText = ''
     if (file.type === 'application/pdf') {
-      const pdfData = await pdfParse(buffer)
-      extractedText = pdfData.text
+      try {
+        const pdfData = await pdfParse(buffer)
+        extractedText = pdfData.text
+      } catch (parseErr) {
+        console.error('PDF parse error:', parseErr.message)
+        return NextResponse.json(
+        {
+        error: 'This PDF could not be read. It may be damaged or saved in an unsupported way. Try re-saving it (open it, then Print > Save as PDF) and upload again.',
+        userFacing: true,
+        },
+        { status: 422 }
+       )
+      }
     } else if (
       file.type ===
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document'

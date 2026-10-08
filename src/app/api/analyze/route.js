@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { GoogleGenerativeAI } from '@google/generative-ai'
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+import { generateText } from '@/lib/gemini'
 
 export async function POST(request) {
   try {
@@ -11,8 +9,6 @@ export async function POST(request) {
     if (!extractedText) {
       return NextResponse.json({ error: 'No document text provided' }, { status: 400 })
     }
-
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' })
 
     const prompt = `You are a legal document assistant. You will be given the text of a legal document. Respond in this exact format:
 
@@ -32,8 +28,8 @@ Here is the legal document text:
 
 ${extractedText}`
 
-    const result = await model.generateContent(prompt)
-    const analysisText = result.response.text()
+    const analysisText = await generateText(prompt)
+    
 
     // Save the analysis back into the documents table
     const { error: dbError } = await supabase

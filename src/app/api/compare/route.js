@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { GoogleGenerativeAI } from '@google/generative-ai'
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+import { generateText } from '@/lib/gemini'
 
 export async function POST(request) {
   try {
@@ -30,7 +28,6 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Both documents are required' }, { status: 400 })
     }
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' })
 
     const prompt = `You are a legal document assistant comparing two versions of a contract. Respond in this exact format:
 
@@ -55,8 +52,7 @@ ${textA}
 VERSION B (${nameB || 'Document B'}):
 ${textB}`
 
-    const result = await model.generateContent(prompt)
-    const comparison = result.response.text()
+   const comparison = await generateText(prompt)
 
     return NextResponse.json({ success: true, comparison })
   } catch (err) {
